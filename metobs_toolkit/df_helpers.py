@@ -15,6 +15,7 @@ import geopandas as gpd
 import itertools
 import pytz
 import logging
+from datetime import datetime as datetime_
 
 logger = logging.getLogger(__name__)
 
@@ -286,6 +287,89 @@ def multiindexdf_datetime_subsetting(df, starttime, endtime):
         )
 
     return returndf
+
+
+# =============================================================================
+# Datetime aggregations
+# =============================================================================
+def _make_time_derivatives(df, required, get_all=False):
+    """Construct time derivated columns if required.
+
+    datetime must be a column.
+    """
+    if ("minute" in required) | (get_all):
+        df["minute"] = df["datetime"].dt.minute
+    if ("hour" in required) | (get_all):
+        df["hour"] = df["datetime"].dt.hour
+    if ("month" in required) | (get_all):
+        df["month"] = df["datetime"].dt.month_name()
+    if ("year" in required) | (get_all):
+        df["year"] = df["datetime"].dt.year
+    if ("day_of_year" in required) | (get_all):
+        df["day_of_year"] = df["datetime"].dt.day_of_year
+    if ("week_of_year" in required) | (get_all):
+        df["week_of_year"] = df["datetime"].dt.isocalendar()["week"]
+    if ("season" in required) | (get_all):
+        df["season"] = get_seasons(df["datetime"])
+
+    return df
+
+
+def get_seasons(
+    datetimeseries,
+    start_day_spring="01/03",
+    start_day_summer="01/06",
+    start_day_autumn="01/09",
+    start_day_winter="01/12",
+):
+    """Convert a datetimeseries to a season label (i.g. categorical).
+
+    Parameters
+    ----------
+    datetimeseries : datetime.datetime
+        The timeseries that you want to split up in seasons.
+    start_day_spring : str , optional
+        Start date for spring, default is '01/03' and if changed the input
+        should have the same format as the default value.
+    start_day_summer : str , optional
+        Start date for summer, default is '01/06' and if changed the input
+        should have the same format as the default value.
+    start_day_autumn : str , optional
+        Start date for autumn, default is '01/09' and if changed the input
+        should have the same format as the default value.
+    start_day_winter : str , optional
+        Start date for winter, default is '01/12' and if changed the input
+        should have the same format as the default value.
+
+    Returns
+    -------
+    output : dataframe
+        A obtained dataframe that has where a label for the seasons has been added.
+    """
+    spring_startday = datetime_.strptime(start_day_spring, "%d/%m")
+    summer_startday = datetime_.strptime(start_day_summer, "%d/%m")
+    autumn_startday = datetime_.strptime(start_day_autumn, "%d/%m")
+    winter_startday = datetime_.strptime(start_day_winter, "%d/%m")
+
+    seasons = pd.Series(
+        index=["spring", "summer", "autumn", "winter"],
+        data=[spring_startday, summer_startday, autumn_startday, winter_startday],
+        name="startdt",
+    ).to_frame()
+    seasons["day_of_year"] = seasons["startdt"].dt.day_of_year - 1
+
+    bins = [0]
+    bins.extend(seasons["day_of_year"].to_list())
+    bins.append(366)
+
+    labels = ["winter", "spring", "summer", "autumn", "winter"]
+
+    return pd.cut(
+        x=datetimeseries.dt.day_of_year,
+        bins=bins,
+        labels=labels,
+        ordered=False,
+    )
 
 
 # =============================================================================

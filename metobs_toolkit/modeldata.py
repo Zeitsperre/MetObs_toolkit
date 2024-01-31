@@ -10,6 +10,7 @@ import copy
 import sys
 import pickle
 import pandas as pd
+import geopandas as gpd
 import logging
 
 from metobs_toolkit.df_helpers import (
@@ -26,11 +27,15 @@ from metobs_toolkit.plotting_functions import model_timeseries_plot, timeseries_
 
 from metobs_toolkit.obstypes import Obstype as Obstype_class
 from metobs_toolkit.obstype_modeldata import era5_default_model_obstypes
+from metobs_toolkit.obstype_modeldata import sfx_default_model_obstypes
 from metobs_toolkit.obstype_modeldata import (
     ModelObstype,
     ModelObstype_Vectorfield,
 )
 from metobs_toolkit.gee_extractor import GeeExtractor
+from metobs_toolkit.netcdf_extractor import NetCDFExtractor
+from metobs_toolkit.analysis import Analysis
+
 from metobs_toolkit.obstype_modeldata import compute_amplitude, compute_angle
 from metobs_toolkit.settings import Settings
 
@@ -56,6 +61,9 @@ class Modeldata:
         if isinstance(extractor, GeeExtractor):
             # Default obstypes Dict name: Obstype-instance
             self.obstypes = era5_default_model_obstypes.copy()
+        elif isinstance(extractor, NetCDFExtractor):
+            # TODO: this will not work when including arome defaults etc.
+            self.obstypes = sfx_default_model_obstypes.copy()
         else:
             self.obstypes = []  # only default era5 modelobstypes are defined
 
@@ -150,6 +158,40 @@ class Modeldata:
     # =============================================================================
     # Importers
     # =============================================================================
+
+    def import_from_netcdf(self):
+
+        assert isinstance(
+            self.extractor, NetCDFExtractor
+        ), f"Import from netCDF is only available for a NetCDFExtractor, not a {self.extractor}"
+
+        # make a geopandaseries fro te gdf
+        df = self.extractor.extract_values_at_2d_fields(
+            geoseries=self.metadf["geometry"], method="nearest", tolerance=None
+        )
+        # rename index
+        df = (
+            df.reset_index()
+            .rename(columns={"timestamp": "datetime"})
+            .set_index(["name", "datetime"])
+        )
+
+        # Extract metadata
+        self.gridpoint_to_station_distances = df["tollerance_distances"]
+        df = df.drop(columns=["tollerance_distances"], errors="ignore")
+
+        # Find wicht obstypes are found in the dataframe
+        found_obstypes = []
+        for obs in self.obstypes.values():
+            bandnames = list(obs.get_bandname_mapper().keys())
+            for bandname in bandnames:
+                if bandname in df.columns:
+                    found_obstypes.append(obs)
+        found_obstypes = list(set(found_obstypes))
+
+        self.df = self._update_df_attribute_from_gee_df(
+            rawdf=df, expected_obstypes=found_obstypes
+        )
 
     def import_from_gee(
         self, target_obstypes, start_utc, end_utc, gdrive_filename="era5_data"
@@ -302,6 +344,7 @@ class Modeldata:
         """Rename columns, convert to std units and create aggregated fields
         if vector field detected."""
 
+        subset_cols = []
         for obs in expected_obstypes:
             if isinstance(obs, ModelObstype):
                 # rename column
@@ -310,6 +353,7 @@ class Modeldata:
                 rawdf[obs.name] = obs.convert_to_standard_units(
                     input_data=rawdf[obs.name], input_unit=obs.get_bandunit()
                 )
+                subset_cols.append(obs.name)
             elif isinstance(obs, ModelObstype_Vectorfield):
                 # rename columns
                 rawdf = rawdf.rename(columns=obs.get_bandname_mapper())
@@ -329,7 +373,7 @@ class Modeldata:
 
                 # add amplitude clumn
                 rawdf[amp_obstype.name] = ampseries
-
+                subset_cols.append(amp_obstype.name)
                 # ------ Direction  --------
                 # calculate angle field
                 angleseries, angle_obstype = compute_angle(
@@ -342,17 +386,19 @@ class Modeldata:
 
                 # add amplitude clumn
                 rawdf[angle_obstype.name] = angleseries
-
+                subset_cols.append(angle_obstype.name)
                 # ----- Keep the components --------
                 # we can keep the components, but we need to create two new obstypes
                 # since we will interpret them as scalar 2d fields
                 u_comp_obstype, v_comp_obstype = obs.create_the_scalar_modelobstypes()
                 self.obstypes[u_comp_obstype.name] = u_comp_obstype
+                subset_cols.append(u_comp_obstype.name)
                 self.obstypes[v_comp_obstype.name] = v_comp_obstype
+                subset_cols.append(v_comp_obstype.name)
 
             else:
                 sys.exit("Something went wrong. Report this error.")
-        return rawdf
+        return rawdf[subset_cols]
 
     # =============================================================================
     # IO
@@ -406,6 +452,14 @@ class Modeldata:
 
         print(f"Modeldata saved in {full_path}")
         logger.info(f"Modeldata saved in {full_path}")
+
+    # =============================================================================
+    # Convertors
+    # =============================================================================
+    def get_analysis(self):
+        return Analysis(
+            obsdf=self.df, metadf=self.metadf, settings=None, obstypes=self.obstypes
+        )
 
     # =============================================================================
     # Plotters
@@ -647,7 +701,12 @@ class Modeldata:
         y_label = obstype_model.get_plot_y_label()
 
         # Generate title
-        title = f"{self.extractor.usage} data for {obstype_dataset.name} from {self.extractor.location}"
+        if isinstance(self.extractor, GeeExtractor):
+            title = f"{self.extractor.usage} data for {obstype_dataset.name} from {self.extractor.location}"
+
+        if isinstance(self.extractor, NetCDFExtractor):
+            title = f"SFX data from {obstype_model.get_bandname()}"
+
         if dataset is not None:
             title = f" {title} \n and {obstype_dataset.name} observations."
 
@@ -731,9 +790,19 @@ def import_modeldata(target_pkl_file):
 def _format_metadf(metadf):
     _ = _is_metadf_valid(metadf)
 
+    # make shure the index is named
     if metadf.index.name is None:
         if not isinstance(metadf.index, pd.MultiIndex):
             metadf.index.name = "name"
+
+    # Convert to geopandas dataframe for crs transformation
+    if not isinstance(metadf, gpd.GeoDataFrame):
+        # convert to gdf
+        metadf = gpd.GeoDataFrame(
+            metadf,
+            geometry=gpd.points_from_xy(metadf["lon"], metadf["lat"]),
+            crs="EPSG:4326",
+        )
     return metadf
 
 

@@ -157,6 +157,47 @@ def make_cat_colormapper(catlist, cmapname):
 # =============================================================================
 
 
+def make_regular_fig():
+
+    fig, ax = plt.subplots()
+    return fig, ax
+
+
+def make_platcarree_fig():
+    """Create figure and axes in PlateCarree (only if data in latlon)"""
+    fig, ax = plt.subplots(subplot_kw={"projection": ccrs.PlateCarree()})
+    return fig, ax
+
+
+def xarray_2d_plot(
+    dxr,
+    ax,
+    title=None,
+    grid=False,
+    land=True,
+    coastline=True,
+    contour=False,
+    levels=10,
+    cbar_kwargs={},
+    **kwargs,
+):
+    if contour:
+        dxr.plot.contourf(ax=ax, levels=levels, cbar_kwargs=cbar_kwargs, **kwargs)
+
+    else:
+        dxr.plot(ax=ax, cbar_kwargs=cbar_kwargs, **kwargs)
+    if land:
+        ax.add_feature(cfeature.LAND)
+        ax.add_feature(cfeature.BORDERS)
+    if coastline:
+        ax.add_feature(cfeature.COASTLINE)
+    if grid:
+        ax.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False)
+    ax.set_title(title)
+
+    return ax
+
+
 def make_folium_html_plot(
     gdf,
     variable_column,
@@ -1023,10 +1064,7 @@ def cycle_plot(
     errorbandsdf,
     title,
     plot_settings,
-    aggregation,
-    data_template,
     obstype,
-    y_label,
     legend,
     show_zero_horizontal=False,
 ):
@@ -1043,14 +1081,8 @@ def cycle_plot(
         Title of the plot.
     plot_settings : dict
         The cycle-specific settings.
-    aggregation : list
-        A list of strings to indicate the group defenition.
-    data_template : dict
-        The template of the dataset.
     obstype : str
         The observation type to plot.
-    y_label : str
-        The label for the vertical axes.
     legend : bool
         If True, a legend is added to the figure.
     show_zero_horizontal : bool, optional

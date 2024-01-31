@@ -519,11 +519,36 @@ wind_era5 = ModelObstype_Vectorfield(
 )
 
 
-# =============================================================================
-# Create obstype dict
-# =============================================================================
 era5_default_model_obstypes = {
     "temp": temp_era5,
     "pressure": pressure_era5,
     "wind": wind_era5,
 }
+
+# =============================================================================
+# Define default SFX obstypes
+# =============================================================================
+
+temp_sfx = ModelObstype(
+    obstype=temperature,
+    band_name="SFX.T2M",
+    band_unit="Kelvin",
+    band_description="Surfex 2mT at gridpoint",
+)
+temp_sfx.name = "temp_sfx"
+
+temp_sfx_teb = ModelObstype(
+    obstype=temperature,
+    band_name="SFX.T2M_TEB",
+    band_unit="Kelvin",
+    band_description="Surfex 2mT at town tile level",
+)
+temp_sfx_teb.name = "temp_sfx_teb"
+
+
+sfx_default_model_obstypes = {temp_sfx.name: temp_sfx, temp_sfx_teb.name: temp_sfx_teb}
+
+
+# =============================================================================
+# Create obstype dict
+# =============================================================================

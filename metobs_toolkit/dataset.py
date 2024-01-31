@@ -1661,7 +1661,7 @@ class Dataset:
             obsdf=df,
             metadf=self.metadf,
             settings=self.settings,
-            data_template=self.data_template,
+            obstypes=self.obstypes.copy(),
         )
 
     def fill_gaps_using_debiased_modeldata(

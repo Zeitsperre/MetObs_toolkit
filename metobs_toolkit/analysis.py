@@ -12,6 +12,7 @@ import logging
 import copy
 from scipy.stats import pearsonr
 
+from metobs_toolkit.settings import Settings
 from metobs_toolkit.plotting_functions import (
     cycle_plot,
     heatmap_plot,
@@ -22,6 +23,8 @@ from metobs_toolkit.df_helpers import (
     datetime_subsetting,
     subset_stations,
     fmt_datetime_argument,
+    get_seasons,
+    _make_time_derivatives,
 )
 
 logger = logging.getLogger(__name__)
@@ -30,12 +33,17 @@ logger = logging.getLogger(__name__)
 class Analysis:
     """The Analysis class contains methods for analysing observations."""
 
-    def __init__(self, obsdf, metadf, settings, data_template):
+    def __init__(self, obsdf, metadf, obstypes, settings=None):
         """Initialize an Analysis."""
         self.df = obsdf
         self.metadf = metadf
-        self.settings = settings
-        self.data_template = data_template
+        # self.data_template = data_template
+        self.obstypes = obstypes
+
+        if not settings is None:
+            self.settings = settings
+        else:
+            self.settings = copy.deepcopy(Settings())
 
         # analysis objects
         self.lc_cor_dict = {}
@@ -169,7 +177,7 @@ class Analysis:
             obsdf=child_df,
             metadf=child_metadf,
             settings=self.settings,
-            data_template=self.data_template,
+            obstypes=self.obstypes.copy(),
         )
 
     def aggregate_df(self, df=None, agg=["lcz", "hour"], method="mean"):
@@ -327,24 +335,28 @@ class Analysis:
 
         """
         # title
-        desc_dict = self.data_template[obstype].to_dict()
+        # desc_dict = self.data_template[obstype].to_dict()
+        assert (
+            obstype in self.obstypes.keys()
+        ), f"{obstype} not found in the known obstypes: {self.obstypes}"
 
-        if "description" not in desc_dict:
-            desc_dict["description"] = obstype
-        if not isinstance(desc_dict["description"], str):
-            desc_dict["description"] = obstype
+        # if "description" not in desc_dict:
+        #     desc_dict["description"] = obstype
+        # if not isinstance(desc_dict["description"], str):
+        #     desc_dict["description"] = obstype
 
         if title is None:
-            title = f'Anual {desc_dict["description"]} cycle plot per {groupby}.'
+            title = f"Anual {obstype} cycle plot per {groupby}."
         else:
             title = str(title)
 
         # ylabel
         if y_label is None:
-            if "units" not in desc_dict:
-                y_label = f'{desc_dict["description"]} (units unknown)'
-            else:
-                y_label = f'{desc_dict["description"]} ({desc_dict["units"]})'
+            # if "units" not in desc_dict:
+            #     y_label = f'{desc_dict["description"]} (units unknown)'
+            # else:
+            #     y_label = f'{desc_dict["description"]} ({desc_dict["units"]})'
+            y_label = self.obstypes[obstype].get_plot_y_label()
         else:
             y_label = str(y_label)
 
@@ -420,12 +432,15 @@ class Analysis:
 
         """
         # title
-        desc_dict = self.data_template[obstype].to_dict()
+        assert (
+            obstype in self.obstypes.keys()
+        ), f"{obstype} not found in the known obstypes: {self.obstypes}"
+        # desc_dict = self.data_template[obstype].to_dict()
 
-        if "description" not in desc_dict:
-            desc_dict["description"] = obstype
-        if not isinstance(desc_dict["description"], str):
-            desc_dict["description"] = obstype
+        # if "description" not in desc_dict:
+        #     desc_dict["description"] = obstype
+        # if not isinstance(desc_dict["description"], str):
+        #     desc_dict["description"] = obstype
 
         if title is None:
             if startdt is None:
@@ -444,10 +459,11 @@ class Analysis:
 
         # ylabel
         if y_label is None:
-            if "units" not in desc_dict:
-                y_label = f'{desc_dict["description"]} (units unknown)'
-            else:
-                y_label = f'{desc_dict["description"]} ({desc_dict["units"]})'
+            # if "units" not in desc_dict:
+            #     y_label = f'{desc_dict["description"]} (units unknown)'
+            # else:
+            #     y_label = f'{desc_dict["description"]} ({desc_dict["units"]})'
+            y_label = self.obstypes[obstype].get_plot_y_label()
         else:
             y_label = str(y_label)
 
@@ -535,6 +551,9 @@ class Analysis:
         as if it has the same timezone as the observations.
 
         """
+        assert (
+            obstype in self.obstypes.keys()
+        ), f"{obstype} not found in the known obstypes: {self.obstypes}"
         obsdf = self.df
         obsdf = obsdf[obstype].reset_index()
 
@@ -569,11 +588,11 @@ class Analysis:
         mergedf = mergedf.set_index(["name", "datetime"])
 
         # title
-        desc_dict = self.data_template[obstype].to_dict()
-        if "description" not in desc_dict:
-            desc_dict["description"] = obstype
-        if not isinstance(desc_dict["description"], str):
-            desc_dict["description"] = obstype
+        # desc_dict = self.data_template[obstype].to_dict()
+        # if "description" not in desc_dict:
+        #     desc_dict["description"] = obstype
+        # if not isinstance(desc_dict["description"], str):
+        #     desc_dict["description"] = obstype
 
         if title is None:
             if startdt is None:
@@ -592,10 +611,11 @@ class Analysis:
 
         # ylabel
         if y_label is None:
-            if "units" not in desc_dict:
-                y_label = f'{desc_dict["description"]} (units unknown)'
-            else:
-                y_label = f'{desc_dict["description"]} ({desc_dict["units"]})'
+            # if "units" not in desc_dict:
+            #     y_label = f'{desc_dict["description"]} (units unknown)'
+            # else:
+            #     y_label = f'{desc_dict["description"]} ({desc_dict["units"]})'
+            y_label = self.obstypes[obstype].get_plot_y_label()
         else:
             y_label = str(y_label)
 
@@ -693,6 +713,9 @@ class Analysis:
         else:
             obsdf = _obsdf
 
+        assert (
+            obstype in self.obstypes.keys()
+        ), f"{obstype} not found in the known obstypes: {self.obstypes}"
         assert not obsdf.empty, f"Error: No observations in the analysis.df: {self.df}"
         # Filter stations
         if stations is not None:
@@ -806,14 +829,14 @@ class Analysis:
 
         if plot:
             # description of the obstype
-            desc_dict = self.data_template[obstype].to_dict()
-            if "description" not in desc_dict:
-                desc_dict["description"] = obstype
+            # desc_dict = self.data_template[obstype].to_dict()
+            # if "description" not in desc_dict:
+            #     desc_dict["description"] = obstype
 
-            if not isinstance(desc_dict["description"], str):
-                desc_dict["description"] = obstype
+            # if not isinstance(desc_dict["description"], str):
+            #     desc_dict["description"] = obstype
 
-            description = desc_dict["description"]
+            # description = desc_dict["description"]
 
             # generate title
             if title is None:
@@ -827,10 +850,11 @@ class Analysis:
 
             # ylabel
             if y_label is None:
-                if "units" not in desc_dict:
-                    y_label = f'{desc_dict["description"]} (units unknown)'
-                else:
-                    y_label = f'{desc_dict["description"]} ({desc_dict["units"]})'
+                # if "units" not in desc_dict:
+                #     y_label = f'{desc_dict["description"]} (units unknown)'
+                # else:
+                #     y_label = f'{desc_dict["description"]} ({desc_dict["units"]})'
+                y_label = self.obstypes[obstype].get_plot_y_label()
             else:
                 y_label = str(y_label)
 
@@ -846,10 +870,7 @@ class Analysis:
                 errorbandsdf=stddf,
                 title=title,
                 plot_settings=self.settings.app["plot_settings"]["diurnal"],
-                aggregation=aggregation,
-                data_template=self.data_template,
                 obstype=obstype,
-                y_label=y_label,
                 legend=legend,
                 show_zero_horizontal=_show_zero_line,
             )
@@ -1125,84 +1146,84 @@ class Analysis:
         return ax
 
 
-def _make_time_derivatives(df, required, get_all=False):
-    """Construct time derivated columns if required.
+# def _make_time_derivatives(df, required, get_all=False):
+#     """Construct time derivated columns if required.
 
-    datetime must be a column.
-    """
-    if ("minute" in required) | (get_all):
-        df["minute"] = df["datetime"].dt.minute
-    if ("hour" in required) | (get_all):
-        df["hour"] = df["datetime"].dt.hour
-    if ("month" in required) | (get_all):
-        df["month"] = df["datetime"].dt.month_name()
-    if ("year" in required) | (get_all):
-        df["year"] = df["datetime"].dt.year
-    if ("day_of_year" in required) | (get_all):
-        df["day_of_year"] = df["datetime"].dt.day_of_year
-    if ("week_of_year" in required) | (get_all):
-        df["week_of_year"] = df["datetime"].dt.isocalendar()["week"]
-    if ("season" in required) | (get_all):
-        df["season"] = get_seasons(df["datetime"])
+#     datetime must be a column.
+#     """
+#     if ("minute" in required) | (get_all):
+#         df["minute"] = df["datetime"].dt.minute
+#     if ("hour" in required) | (get_all):
+#         df["hour"] = df["datetime"].dt.hour
+#     if ("month" in required) | (get_all):
+#         df["month"] = df["datetime"].dt.month_name()
+#     if ("year" in required) | (get_all):
+#         df["year"] = df["datetime"].dt.year
+#     if ("day_of_year" in required) | (get_all):
+#         df["day_of_year"] = df["datetime"].dt.day_of_year
+#     if ("week_of_year" in required) | (get_all):
+#         df["week_of_year"] = df["datetime"].dt.isocalendar()["week"]
+#     if ("season" in required) | (get_all):
+#         df["season"] = get_seasons(df["datetime"])
 
-    return df
+#     return df
 
 
-def get_seasons(
-    datetimeseries,
-    start_day_spring="01/03",
-    start_day_summer="01/06",
-    start_day_autumn="01/09",
-    start_day_winter="01/12",
-):
-    """Convert a datetimeseries to a season label (i.g. categorical).
+# def get_seasons(
+#     datetimeseries,
+#     start_day_spring="01/03",
+#     start_day_summer="01/06",
+#     start_day_autumn="01/09",
+#     start_day_winter="01/12",
+# ):
+#     """Convert a datetimeseries to a season label (i.g. categorical).
 
-    Parameters
-    ----------
-    datetimeseries : datetime.datetime
-        The timeseries that you want to split up in seasons.
-    start_day_spring : str , optional
-        Start date for spring, default is '01/03' and if changed the input
-        should have the same format as the default value.
-    start_day_summer : str , optional
-        Start date for summer, default is '01/06' and if changed the input
-        should have the same format as the default value.
-    start_day_autumn : str , optional
-        Start date for autumn, default is '01/09' and if changed the input
-        should have the same format as the default value.
-    start_day_winter : str , optional
-        Start date for winter, default is '01/12' and if changed the input
-        should have the same format as the default value.
+#     Parameters
+#     ----------
+#     datetimeseries : datetime.datetime
+#         The timeseries that you want to split up in seasons.
+#     start_day_spring : str , optional
+#         Start date for spring, default is '01/03' and if changed the input
+#         should have the same format as the default value.
+#     start_day_summer : str , optional
+#         Start date for summer, default is '01/06' and if changed the input
+#         should have the same format as the default value.
+#     start_day_autumn : str , optional
+#         Start date for autumn, default is '01/09' and if changed the input
+#         should have the same format as the default value.
+#     start_day_winter : str , optional
+#         Start date for winter, default is '01/12' and if changed the input
+#         should have the same format as the default value.
 
-    Returns
-    -------
-    output : dataframe
-        A obtained dataframe that has where a label for the seasons has been added.
-    """
-    spring_startday = datetime.strptime(start_day_spring, "%d/%m")
-    summer_startday = datetime.strptime(start_day_summer, "%d/%m")
-    autumn_startday = datetime.strptime(start_day_autumn, "%d/%m")
-    winter_startday = datetime.strptime(start_day_winter, "%d/%m")
+#     Returns
+#     -------
+#     output : dataframe
+#         A obtained dataframe that has where a label for the seasons has been added.
+#     """
+#     spring_startday = datetime.strptime(start_day_spring, "%d/%m")
+#     summer_startday = datetime.strptime(start_day_summer, "%d/%m")
+#     autumn_startday = datetime.strptime(start_day_autumn, "%d/%m")
+#     winter_startday = datetime.strptime(start_day_winter, "%d/%m")
 
-    seasons = pd.Series(
-        index=["spring", "summer", "autumn", "winter"],
-        data=[spring_startday, summer_startday, autumn_startday, winter_startday],
-        name="startdt",
-    ).to_frame()
-    seasons["day_of_year"] = seasons["startdt"].dt.day_of_year - 1
+#     seasons = pd.Series(
+#         index=["spring", "summer", "autumn", "winter"],
+#         data=[spring_startday, summer_startday, autumn_startday, winter_startday],
+#         name="startdt",
+#     ).to_frame()
+#     seasons["day_of_year"] = seasons["startdt"].dt.day_of_year - 1
 
-    bins = [0]
-    bins.extend(seasons["day_of_year"].to_list())
-    bins.append(366)
+#     bins = [0]
+#     bins.extend(seasons["day_of_year"].to_list())
+#     bins.append(366)
 
-    labels = ["winter", "spring", "summer", "autumn", "winter"]
+#     labels = ["winter", "spring", "summer", "autumn", "winter"]
 
-    return pd.cut(
-        x=datetimeseries.dt.day_of_year,
-        bins=bins,
-        labels=labels,
-        ordered=False,
-    )
+#     return pd.cut(
+#         x=datetimeseries.dt.day_of_year,
+#         bins=bins,
+#         labels=labels,
+#         ordered=False,
+#     )
 
 
 def filter_data(df, metadf, quarry_str):
